@@ -1,31 +1,18 @@
 "use strict";
 
-// =====================================
-// REST API CONFIGURATION
-// =====================================
+// API configuration
 
 const API_BASE = "https://media2.edu.metropolia.fi/restaurant/api/v1";
 
 const API = {
   restaurants: `${API_BASE}/restaurants`,
-
   daily: (id) => `${API_BASE}/restaurants/daily/${encodeURIComponent(id)}/en`,
-
   weekly: (id) => `${API_BASE}/restaurants/weekly/${encodeURIComponent(id)}/en`,
-
   login: `${API_BASE}/auth/login`,
-
   users: `${API_BASE}/users`,
-
-  profile: `${API_BASE}/users/token`,
-
-  available: (username) =>
-    `${API_BASE}/users/available/${encodeURIComponent(username)}`,
 };
 
-// =====================================
-// DOM ELEMENTS
-// =====================================
+// DOM elements
 
 const $ = (selector) => document.querySelector(selector);
 
@@ -47,7 +34,6 @@ const allBtn = $("#allBtn");
 const favoritesBtn = $("#favoritesBtn");
 
 const mapRestaurantSelect = $("#mapRestaurantSelect");
-
 const mapStatus = $("#mapStatus");
 const mapFrame = $("#restaurantMap");
 
@@ -63,12 +49,9 @@ const registerStatus = $("#registerStatus");
 const loginNav = $("#loginNav");
 const registerNav = $("#registerNav");
 const logoutBtn = $("#logoutBtn");
-
 const welcomeMessage = $("#welcomeMessage");
 
-// =====================================
-// APPLICATION STATE
-// =====================================
+// Application state
 
 let restaurants = [];
 let selectedRestaurant = null;
@@ -77,29 +60,20 @@ let menuRequestId = 0;
 
 let currentUser = null;
 let token = null;
+let updatingFavorite = false;
 
 const STORAGE_KEY = "studentFoodFavorites";
 
-// =====================================
-// FOOD IMAGES
-// =====================================
-
-// These are illustrative food images,
-// not actual restaurant photographs.
+// Illustrative food images
 
 const FOOD_IMAGES = [
   "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=700&auto=format&fit=crop&q=80",
-
   "https://images.unsplash.com/photo-1547592180-85f173990554?w=700&auto=format&fit=crop&q=80",
-
   "https://images.unsplash.com/photo-1511690743698-d9d85f2fbf38?w=700&auto=format&fit=crop&q=80",
-
   "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=700&auto=format&fit=crop&q=80",
 ];
 
-// =====================================
-// FAVORITES STORAGE
-// =====================================
+// Local favorites
 
 function loadFavorites() {
   try {
@@ -121,9 +95,7 @@ function saveFavorites() {
   }
 }
 
-// =====================================
-// API FETCH FUNCTION
-// =====================================
+// API requests
 
 async function fetchData(url, options = {}) {
   const headers = {
@@ -135,55 +107,57 @@ async function fetchData(url, options = {}) {
     headers["Content-Type"] = "application/json";
   }
 
-  const response = await fetch(url, {
-    ...options,
-    headers,
-  });
+  let response;
+
+  try {
+    response = await fetch(url, {
+      ...options,
+      headers,
+    });
+  } catch (error) {
+    console.error("Network request failed:", error);
+
+    throw new Error(
+      "Cannot connect to the server. Check your internet connection and browser permissions.",
+    );
+  }
 
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
+    const message =
+      data?.message || data?.error || `Server error: HTTP ${response.status}`;
+
     throw new Error(
-      data?.message || `API request failed: HTTP ${response.status}`,
+      typeof message === "string" ? message : JSON.stringify(message),
     );
   }
 
   if (data === null) {
-    throw new Error("Invalid API response.");
+    throw new Error("Invalid server response.");
   }
 
   return data;
 }
 
-// =====================================
-// NORMALIZE RESTAURANT DATA
-// =====================================
+// Normalize restaurant data
 
 function normalizeRestaurant(item) {
   const coordinates = item.location?.coordinates;
 
   return {
     id: String(item._id ?? item.id ?? ""),
-
     name: String(item.name ?? "Unnamed Restaurant"),
-
     city: String(item.city ?? "Unknown"),
-
     address: String(item.address ?? ""),
-
     postalCode: String(item.postalCode ?? ""),
-
     phone: String(item.phone ?? ""),
-
     provider: String(item.company ?? "Unknown"),
-
     coordinates: Array.isArray(coordinates) ? coordinates : null,
   };
 }
 
-// =====================================
-// LOAD RESTAURANTS
-// =====================================
+// Load restaurants
 
 async function loadRestaurants() {
   statusMessage.textContent = "Loading restaurants...";
@@ -214,12 +188,22 @@ async function loadRestaurants() {
     statusMessage.textContent = "Unable to load restaurants. " + error.message;
 
     restaurantCount.textContent = "Unavailable";
+
+    restaurantList.replaceChildren();
+
+    const retryButton = document.createElement("button");
+
+    retryButton.type = "button";
+    retryButton.className = "primary-button";
+    retryButton.textContent = "Try Again";
+
+    retryButton.addEventListener("click", loadRestaurants);
+
+    restaurantList.appendChild(retryButton);
   }
 }
 
-// =====================================
-// FILTER OPTIONS
-// =====================================
+// Filter options
 
 function populateSelect(element, values, label) {
   element.replaceChildren();
@@ -253,9 +237,7 @@ function populateFilters() {
   populateSelect(providerFilter, providers, "All Providers");
 }
 
-// =====================================
-// FAVORITES
-// =====================================
+// Favorite restaurants
 
 function isFavorite(id) {
   if (currentUser) {
@@ -266,22 +248,21 @@ function isFavorite(id) {
 }
 
 async function toggleFavorite(id) {
+  if (updatingFavorite) return;
+
   if (currentUser && token) {
     const activeToken = token;
 
-    try {
-      // The API supports one favorite
-      // restaurant per registered user.
+    updatingFavorite = true;
 
+    try {
       const favoriteId = isFavorite(id) ? null : id;
 
       const result = await fetchData(API.users, {
         method: "PUT",
-
         headers: {
           Authorization: `Bearer ${activeToken}`,
         },
-
         body: JSON.stringify({
           favouriteRestaurant: favoriteId,
         }),
@@ -301,12 +282,18 @@ async function toggleFavorite(id) {
       statusMessage.textContent = "Favorite restaurant updated.";
     } catch (error) {
       statusMessage.textContent = "Unable to update favorite: " + error.message;
+    } finally {
+      updatingFavorite = false;
     }
   } else {
     if (favorites.has(id)) {
       favorites.delete(id);
+
+      statusMessage.textContent = "Restaurant removed from favorites.";
     } else {
       favorites.add(id);
+
+      statusMessage.textContent = "Restaurant added to favorites.";
     }
 
     saveFavorites();
@@ -319,7 +306,6 @@ function setFavoriteFilter(value) {
   showFavoritesOnly = value;
 
   allBtn.classList.toggle("active", !value);
-
   favoritesBtn.classList.toggle("active", value);
 
   displayRestaurants();
@@ -331,9 +317,7 @@ function resetFilters() {
   providerFilter.value = "";
 }
 
-// =====================================
-// DISPLAY RESTAURANTS
-// =====================================
+// Display restaurants
 
 function displayRestaurants() {
   restaurantList.replaceChildren();
@@ -379,9 +363,7 @@ function displayRestaurants() {
   });
 }
 
-// =====================================
-// CREATE RESTAURANT CARD
-// =====================================
+// Create restaurant cards
 
 function createRestaurantCard(item) {
   const card = document.createElement("article");
@@ -404,6 +386,7 @@ function createRestaurantCard(item) {
 
   const favoriteBtn = document.createElement("button");
 
+  favoriteBtn.type = "button";
   favoriteBtn.className = "favorite-button";
 
   favoriteBtn.textContent = isFavorite(item.id) ? "♥" : "♡";
@@ -434,11 +417,9 @@ function createRestaurantCard(item) {
   body.className = "card-body";
 
   const name = document.createElement("h3");
-
   name.textContent = item.name;
 
   const city = document.createElement("p");
-
   city.textContent = `📍 ${item.city}`;
 
   const address = document.createElement("p");
@@ -458,6 +439,7 @@ function createRestaurantCard(item) {
 
   const menuBtn = document.createElement("button");
 
+  menuBtn.type = "button";
   menuBtn.className = "primary-button";
   menuBtn.textContent = "View Menu";
 
@@ -465,6 +447,7 @@ function createRestaurantCard(item) {
 
   const mapBtn = document.createElement("button");
 
+  mapBtn.type = "button";
   mapBtn.className = "map-button";
   mapBtn.textContent = "📍 Map";
 
@@ -479,9 +462,7 @@ function createRestaurantCard(item) {
   return card;
 }
 
-// =====================================
-// SELECT RESTAURANT
-// =====================================
+// Select a restaurant
 
 function selectRestaurant(restaurant) {
   selectedRestaurant = restaurant;
@@ -506,9 +487,7 @@ function selectRestaurant(restaurant) {
   loadMenu("daily");
 }
 
-// =====================================
-// DAILY AND WEEKLY MENUS
-// =====================================
+// Load daily and weekly menus
 
 async function loadMenu(type) {
   if (!selectedRestaurant) return;
@@ -529,15 +508,11 @@ async function loadMenu(type) {
   try {
     const data = await fetchData(url);
 
-    if (requestId !== menuRequestId) {
-      return;
-    }
+    if (requestId !== menuRequestId) return;
 
     renderMenu(data, type);
   } catch (error) {
-    if (requestId !== menuRequestId) {
-      return;
-    }
+    if (requestId !== menuRequestId) return;
 
     menuContent.replaceChildren();
 
@@ -551,9 +526,7 @@ async function loadMenu(type) {
   }
 }
 
-// =====================================
-// NORMALIZE MENU RESPONSE
-// =====================================
+// Normalize menu data
 
 function normalizeDays(data, type) {
   const root = data?.menu ?? data?.data ?? data;
@@ -579,7 +552,6 @@ function normalizeDays(data, type) {
     return [
       {
         date: type === "daily" ? "Today's Menu" : "Weekly Menu",
-
         courses: root,
       },
     ];
@@ -588,9 +560,7 @@ function normalizeDays(data, type) {
   return [];
 }
 
-// =====================================
-// RENDER MENU
-// =====================================
+// Display menus
 
 function renderMenu(data, type) {
   menuContent.replaceChildren();
@@ -643,7 +613,6 @@ function renderMenu(data, type) {
       const details = document.createElement("small");
 
       const price = course?.price ?? "";
-
       const diets = course?.diets ?? "";
 
       details.textContent = [
@@ -662,9 +631,7 @@ function renderMenu(data, type) {
   });
 }
 
-// =====================================
-// RESTAURANT MAP
-// =====================================
+// Restaurant map
 
 function populateMapSelect() {
   mapRestaurantSelect.replaceChildren();
@@ -694,8 +661,7 @@ function showRestaurantOnMap(restaurant) {
 
   let query;
 
-  // API coordinates are in this order:
-  // [longitude, latitude]
+  // API coordinates are longitude and latitude.
 
   if (
     Array.isArray(coordinates) &&
@@ -709,21 +675,15 @@ function showRestaurantOnMap(restaurant) {
     const [longitude, latitude] = coordinates;
 
     query = `${latitude},${longitude}`;
-
-    mapStatus.textContent =
-      `${restaurant.name} — ` +
-      `${restaurant.address}, ` +
-      `${restaurant.city}`;
   } else {
-    // Address fallback if coordinates
-    // are not available.
-
     query = [restaurant.name, restaurant.address, restaurant.city, "Finland"]
       .filter(Boolean)
       .join(", ");
-
-    mapStatus.textContent = `Searching address for ${restaurant.name}.`;
   }
+
+  mapStatus.textContent = [restaurant.name, restaurant.address, restaurant.city]
+    .filter(Boolean)
+    .join(" — ");
 
   mapFrame.src =
     "https://maps.google.com/maps?q=" +
@@ -736,119 +696,172 @@ function showRestaurantOnMap(restaurant) {
   });
 }
 
-// =====================================
-// REGISTRATION
-// =====================================
+// Customer registration
 
 registerForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const submitButton = registerForm.querySelector('button[type="submit"]');
 
+  const username = $("#registerUsername").value.trim();
+  const email = $("#registerEmail").value.trim();
+  const password = $("#registerPassword").value;
+
+  if (!username || !email || !password) {
+    registerStatus.textContent = "Please fill in all fields.";
+
+    return;
+  }
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    registerStatus.textContent = "Please enter a valid email address.";
+
+    return;
+  }
+
+  if (password.length < 8) {
+    registerStatus.textContent = "Password must contain at least 8 characters.";
+
+    return;
+  }
+
   submitButton.disabled = true;
 
   registerStatus.textContent = "Creating account...";
 
-  const username = $("#registerUsername").value.trim();
-
-  const email = $("#registerEmail").value.trim();
-
-  const password = $("#registerPassword").value;
-
   try {
-    // Check username availability.
-
-    const availability = await fetchData(API.available(username));
-
-    if (!availability.available) {
-      throw new Error("Username is already taken.");
-    }
-
     const result = await fetchData(API.users, {
       method: "POST",
-
       body: JSON.stringify({
         username,
-        email,
         password,
+        email,
       }),
     });
 
     if (!result.data) {
-      throw new Error(result.message || "Registration failed.");
+      throw new Error(
+        result.message || "Registration failed. Please try again.",
+      );
     }
 
     registerStatus.replaceChildren();
 
-    const message = document.createElement("p");
+    const successMessage = document.createElement("p");
 
-    message.textContent = result.message || "Account created successfully.";
+    successMessage.textContent = "Account created successfully!";
 
-    registerStatus.appendChild(message);
+    registerStatus.appendChild(successMessage);
 
     if (result.activationUrl) {
       const activationMessage = document.createElement("p");
 
       activationMessage.textContent =
-        "Account activation is required. " +
-        "Follow the activation instructions.";
+        "Please activate your account before logging in.";
 
       registerStatus.appendChild(activationMessage);
 
-      const activationUrl = new URL(result.activationUrl, API_BASE);
+      try {
+        const activationUrl = new URL(result.activationUrl, API_BASE + "/");
 
-      if (activationUrl.protocol === "https:") {
-        const link = document.createElement("a");
+        if (
+          activationUrl.protocol === "https:" &&
+          activationUrl.origin === new URL(API_BASE).origin
+        ) {
+          const link = document.createElement("a");
 
-        link.href = activationUrl.href;
-        link.textContent = "Activate account";
-        link.target = "_blank";
-        link.rel = "noopener noreferrer";
+          link.href = activationUrl.href;
+          link.textContent = "Activate account";
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
 
-        registerStatus.appendChild(link);
+          registerStatus.appendChild(link);
+        } else {
+          activationMessage.textContent =
+            "Check your email or contact the course administrator for activation instructions.";
+        }
+      } catch {
+        activationMessage.textContent =
+          "Check your email for account activation instructions.";
       }
+    } else if (result.data.activated === false) {
+      const message = document.createElement("p");
+
+      message.textContent =
+        "Your account requires activation. Check your email.";
+
+      registerStatus.appendChild(message);
+    } else {
+      const loginButton = document.createElement("button");
+
+      loginButton.type = "button";
+      loginButton.className = "primary-button";
+      loginButton.textContent = "Go to Login";
+
+      loginButton.addEventListener("click", () => {
+        registerDialog.close();
+
+        $("#loginUsername").value = username;
+
+        loginStatus.textContent = "";
+
+        loginDialog.showModal();
+      });
+
+      registerStatus.appendChild(loginButton);
     }
 
     registerForm.reset();
   } catch (error) {
-    registerStatus.textContent = error.message;
+    console.error("Registration error:", error);
+
+    // Handle the API email authentication error.
+
+    if (
+      error.message.includes("535") ||
+      error.message.includes("Authentication failed")
+    ) {
+      registerStatus.textContent =
+        "Registration is temporarily unavailable due to a server issue. Please try again later.";
+    } else {
+      registerStatus.textContent = "Registration failed: " + error.message;
+    }
   } finally {
     submitButton.disabled = false;
   }
 });
 
-// =====================================
-// LOGIN
-// =====================================
+// Customer login
 
 loginForm.addEventListener("submit", async (event) => {
   event.preventDefault();
 
   const submitButton = loginForm.querySelector('button[type="submit"]');
 
+  const username = $("#loginUsername").value.trim();
+  const password = $("#loginPassword").value;
+
+  if (!username || !password) {
+    loginStatus.textContent = "Please enter your username and password.";
+
+    return;
+  }
+
   submitButton.disabled = true;
 
   loginStatus.textContent = "Logging in...";
 
-  const username = $("#loginUsername").value.trim();
-
-  const password = $("#loginPassword").value;
-
   try {
     const result = await fetchData(API.login, {
       method: "POST",
-
       body: JSON.stringify({
         username,
         password,
       }),
     });
 
-    // API may return an error message
-    // even with HTTP status 200.
-
     if (!result.token || !result.data) {
-      throw new Error(result.message || "Invalid login credentials.");
+      throw new Error(result.message || "Invalid username or password.");
     }
 
     token = result.token;
@@ -863,16 +876,18 @@ loginForm.addEventListener("submit", async (event) => {
     updateAuthUI();
 
     displayRestaurants();
+
+    statusMessage.textContent = "You have successfully logged in.";
   } catch (error) {
-    loginStatus.textContent = error.message;
+    console.error("Login error:", error);
+
+    loginStatus.textContent = "Login failed: " + error.message;
   } finally {
     submitButton.disabled = false;
   }
 });
 
-// =====================================
-// LOGIN UI AND LOGOUT
-// =====================================
+// Update login interface
 
 function updateAuthUI() {
   const loggedIn = Boolean(currentUser && token);
@@ -888,6 +903,8 @@ function updateAuthUI() {
   favoritesBtn.textContent = loggedIn ? "♥ Account Favorite" : "♥ My Favorites";
 }
 
+// Logout
+
 logoutBtn.addEventListener("click", () => {
   token = null;
   currentUser = null;
@@ -899,9 +916,7 @@ logoutBtn.addEventListener("click", () => {
   displayRestaurants();
 });
 
-// =====================================
-// DIALOG EVENTS
-// =====================================
+// Dialog events
 
 loginNav.addEventListener("click", () => {
   loginStatus.textContent = "";
@@ -919,13 +934,11 @@ document.querySelectorAll("[data-close]").forEach((button) => {
   button.addEventListener("click", () => {
     const dialog = document.getElementById(button.dataset.close);
 
-    dialog.close();
+    dialog?.close();
   });
 });
 
-// =====================================
-// SEARCH AND FILTER EVENTS
-// =====================================
+// Search and filter events
 
 searchInput.addEventListener("input", displayRestaurants);
 
@@ -945,25 +958,33 @@ favoritesBtn.addEventListener("click", () => {
   setFavoriteFilter(true);
 });
 
-$("#navFavorites").addEventListener("click", () => {
+$("#navFavorites")?.addEventListener("click", () => {
   resetFilters();
 
   setFavoriteFilter(true);
 });
 
-$("#navRestaurants").addEventListener("click", () => {
+$("#navRestaurants")?.addEventListener("click", () => {
   resetFilters();
 
   setFavoriteFilter(false);
 });
 
-// =====================================
-// MENU EVENTS
-// =====================================
+$("#footerFavorites")?.addEventListener("click", () => {
+  resetFilters();
 
-dailyBtn.addEventListener("click", () => loadMenu("daily"));
+  setFavoriteFilter(true);
+});
 
-weeklyBtn.addEventListener("click", () => loadMenu("weekly"));
+// Menu events
+
+dailyBtn.addEventListener("click", () => {
+  loadMenu("daily");
+});
+
+weeklyBtn.addEventListener("click", () => {
+  loadMenu("weekly");
+});
 
 $("#closeMenu").addEventListener("click", () => {
   ++menuRequestId;
@@ -973,9 +994,7 @@ $("#closeMenu").addEventListener("click", () => {
   menuSection.hidden = true;
 });
 
-// =====================================
-// MAP EVENTS
-// =====================================
+// Map events
 
 $("#findOnMapBtn").addEventListener("click", () => {
   const id = mapRestaurantSelect.value;
@@ -991,14 +1010,7 @@ $("#findOnMapBtn").addEventListener("click", () => {
   showRestaurantOnMap(restaurant);
 });
 
-// =====================================
-// START APPLICATION
-// =====================================
+// Start application
 
 updateAuthUI();
 loadRestaurants();
-
-$("#footerFavorites").addEventListener("click", () => {
-  resetFilters();
-  setFavoriteFilter(true);
-});
