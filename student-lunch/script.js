@@ -1,0 +1,1004 @@
+"use strict";
+
+// =====================================
+// REST API CONFIGURATION
+// =====================================
+
+const API_BASE = "https://media2.edu.metropolia.fi/restaurant/api/v1";
+
+const API = {
+  restaurants: `${API_BASE}/restaurants`,
+
+  daily: (id) => `${API_BASE}/restaurants/daily/${encodeURIComponent(id)}/en`,
+
+  weekly: (id) => `${API_BASE}/restaurants/weekly/${encodeURIComponent(id)}/en`,
+
+  login: `${API_BASE}/auth/login`,
+
+  users: `${API_BASE}/users`,
+
+  profile: `${API_BASE}/users/token`,
+
+  available: (username) =>
+    `${API_BASE}/users/available/${encodeURIComponent(username)}`,
+};
+
+// =====================================
+// DOM ELEMENTS
+// =====================================
+
+const $ = (selector) => document.querySelector(selector);
+
+const restaurantList = $("#restaurantList");
+const searchInput = $("#search");
+const cityFilter = $("#cityFilter");
+const providerFilter = $("#providerFilter");
+const restaurantCount = $("#restaurantCount");
+const statusMessage = $("#status");
+
+const menuSection = $("#menuSection");
+const restaurantName = $("#restaurantName");
+const restaurantDetails = $("#restaurantDetails");
+const menuContent = $("#menuContent");
+
+const dailyBtn = $("#dailyBtn");
+const weeklyBtn = $("#weeklyBtn");
+const allBtn = $("#allBtn");
+const favoritesBtn = $("#favoritesBtn");
+
+const mapRestaurantSelect = $("#mapRestaurantSelect");
+
+const mapStatus = $("#mapStatus");
+const mapFrame = $("#restaurantMap");
+
+const loginDialog = $("#loginDialog");
+const registerDialog = $("#registerDialog");
+
+const loginForm = $("#loginForm");
+const registerForm = $("#registerForm");
+
+const loginStatus = $("#loginStatus");
+const registerStatus = $("#registerStatus");
+
+const loginNav = $("#loginNav");
+const registerNav = $("#registerNav");
+const logoutBtn = $("#logoutBtn");
+
+const welcomeMessage = $("#welcomeMessage");
+
+// =====================================
+// APPLICATION STATE
+// =====================================
+
+let restaurants = [];
+let selectedRestaurant = null;
+let showFavoritesOnly = false;
+let menuRequestId = 0;
+
+let currentUser = null;
+let token = null;
+
+const STORAGE_KEY = "studentFoodFavorites";
+
+// =====================================
+// FOOD IMAGES
+// =====================================
+
+// These are illustrative food images,
+// not actual restaurant photographs.
+
+const FOOD_IMAGES = [
+  "https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=700&auto=format&fit=crop&q=80",
+
+  "https://images.unsplash.com/photo-1547592180-85f173990554?w=700&auto=format&fit=crop&q=80",
+
+  "https://images.unsplash.com/photo-1511690743698-d9d85f2fbf38?w=700&auto=format&fit=crop&q=80",
+
+  "https://images.unsplash.com/photo-1504674900247-0877df9cc836?w=700&auto=format&fit=crop&q=80",
+];
+
+// =====================================
+// FAVORITES STORAGE
+// =====================================
+
+function loadFavorites() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "[]");
+
+    return new Set(Array.isArray(saved) ? saved.map(String) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+const favorites = loadFavorites();
+
+function saveFavorites() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify([...favorites]));
+  } catch (error) {
+    console.error("Storage error:", error);
+  }
+}
+
+// =====================================
+// API FETCH FUNCTION
+// =====================================
+
+async function fetchData(url, options = {}) {
+  const headers = {
+    Accept: "application/json",
+    ...options.headers,
+  };
+
+  if (options.body) {
+    headers["Content-Type"] = "application/json";
+  }
+
+  const response = await fetch(url, {
+    ...options,
+    headers,
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    throw new Error(
+      data?.message || `API request failed: HTTP ${response.status}`,
+    );
+  }
+
+  if (data === null) {
+    throw new Error("Invalid API response.");
+  }
+
+  return data;
+}
+
+// =====================================
+// NORMALIZE RESTAURANT DATA
+// =====================================
+
+function normalizeRestaurant(item) {
+  const coordinates = item.location?.coordinates;
+
+  return {
+    id: String(item._id ?? item.id ?? ""),
+
+    name: String(item.name ?? "Unnamed Restaurant"),
+
+    city: String(item.city ?? "Unknown"),
+
+    address: String(item.address ?? ""),
+
+    postalCode: String(item.postalCode ?? ""),
+
+    phone: String(item.phone ?? ""),
+
+    provider: String(item.company ?? "Unknown"),
+
+    coordinates: Array.isArray(coordinates) ? coordinates : null,
+  };
+}
+
+// =====================================
+// LOAD RESTAURANTS
+// =====================================
+
+async function loadRestaurants() {
+  statusMessage.textContent = "Loading restaurants...";
+
+  try {
+    const data = await fetchData(API.restaurants);
+
+    const items = Array.isArray(data) ? data : (data.restaurants ?? data.data);
+
+    if (!Array.isArray(items)) {
+      throw new Error("Unexpected restaurant data format.");
+    }
+
+    restaurants = items.map(normalizeRestaurant).filter((item) => item.id);
+
+    restaurants.sort((a, b) => a.name.localeCompare(b.name));
+
+    populateFilters();
+    populateMapSelect();
+    displayRestaurants();
+
+    statusMessage.textContent = restaurants.length
+      ? ""
+      : "No restaurants available.";
+  } catch (error) {
+    console.error(error);
+
+    statusMessage.textContent = "Unable to load restaurants. " + error.message;
+
+    restaurantCount.textContent = "Unavailable";
+  }
+}
+
+// =====================================
+// FILTER OPTIONS
+// =====================================
+
+function populateSelect(element, values, label) {
+  element.replaceChildren();
+
+  const first = document.createElement("option");
+
+  first.value = "";
+  first.textContent = label;
+
+  element.appendChild(first);
+
+  values.forEach((value) => {
+    const option = document.createElement("option");
+
+    option.value = value;
+    option.textContent = value;
+
+    element.appendChild(option);
+  });
+}
+
+function populateFilters() {
+  const cities = [...new Set(restaurants.map((item) => item.city))].sort();
+
+  const providers = [
+    ...new Set(restaurants.map((item) => item.provider)),
+  ].sort();
+
+  populateSelect(cityFilter, cities, "All Cities");
+
+  populateSelect(providerFilter, providers, "All Providers");
+}
+
+// =====================================
+// FAVORITES
+// =====================================
+
+function isFavorite(id) {
+  if (currentUser) {
+    return String(currentUser.favouriteRestaurant ?? "") === id;
+  }
+
+  return favorites.has(id);
+}
+
+async function toggleFavorite(id) {
+  if (currentUser && token) {
+    const activeToken = token;
+
+    try {
+      // The API supports one favorite
+      // restaurant per registered user.
+
+      const favoriteId = isFavorite(id) ? null : id;
+
+      const result = await fetchData(API.users, {
+        method: "PUT",
+
+        headers: {
+          Authorization: `Bearer ${activeToken}`,
+        },
+
+        body: JSON.stringify({
+          favouriteRestaurant: favoriteId,
+        }),
+      });
+
+      if (token !== activeToken) return;
+
+      if (!result.data) {
+        throw new Error(result.message || "Favorite could not be updated.");
+      }
+
+      currentUser = {
+        ...currentUser,
+        ...result.data,
+      };
+
+      statusMessage.textContent = "Favorite restaurant updated.";
+    } catch (error) {
+      statusMessage.textContent = "Unable to update favorite: " + error.message;
+    }
+  } else {
+    if (favorites.has(id)) {
+      favorites.delete(id);
+    } else {
+      favorites.add(id);
+    }
+
+    saveFavorites();
+  }
+
+  displayRestaurants();
+}
+
+function setFavoriteFilter(value) {
+  showFavoritesOnly = value;
+
+  allBtn.classList.toggle("active", !value);
+
+  favoritesBtn.classList.toggle("active", value);
+
+  displayRestaurants();
+}
+
+function resetFilters() {
+  searchInput.value = "";
+  cityFilter.value = "";
+  providerFilter.value = "";
+}
+
+// =====================================
+// DISPLAY RESTAURANTS
+// =====================================
+
+function displayRestaurants() {
+  restaurantList.replaceChildren();
+
+  const search = searchInput.value.trim().toLowerCase();
+
+  const city = cityFilter.value;
+  const provider = providerFilter.value;
+
+  const filtered = restaurants.filter((item) => {
+    const matchesSearch =
+      item.name.toLowerCase().includes(search) ||
+      item.city.toLowerCase().includes(search) ||
+      item.address.toLowerCase().includes(search);
+
+    const matchesCity = !city || item.city === city;
+
+    const matchesProvider = !provider || item.provider === provider;
+
+    const matchesFavorite = !showFavoritesOnly || isFavorite(item.id);
+
+    return matchesSearch && matchesCity && matchesProvider && matchesFavorite;
+  });
+
+  restaurantCount.textContent = `${filtered.length} Restaurants`;
+
+  if (!filtered.length) {
+    const message = document.createElement("p");
+
+    message.className = "empty-message";
+
+    message.textContent = showFavoritesOnly
+      ? "No favorite restaurants found."
+      : "No restaurants match your search.";
+
+    restaurantList.appendChild(message);
+
+    return;
+  }
+
+  filtered.forEach((item) => {
+    restaurantList.appendChild(createRestaurantCard(item));
+  });
+}
+
+// =====================================
+// CREATE RESTAURANT CARD
+// =====================================
+
+function createRestaurantCard(item) {
+  const card = document.createElement("article");
+
+  card.className = "restaurant-card";
+
+  const imageBox = document.createElement("div");
+
+  imageBox.className = "card-image";
+
+  const image = document.createElement("img");
+
+  const imageIndex =
+    [...item.id].reduce((sum, char) => sum + char.charCodeAt(0), 0) %
+    FOOD_IMAGES.length;
+
+  image.src = FOOD_IMAGES[imageIndex];
+  image.alt = "Illustrative student lunch food";
+  image.loading = "lazy";
+
+  const favoriteBtn = document.createElement("button");
+
+  favoriteBtn.className = "favorite-button";
+
+  favoriteBtn.textContent = isFavorite(item.id) ? "♥" : "♡";
+
+  favoriteBtn.classList.toggle("saved", isFavorite(item.id));
+
+  favoriteBtn.setAttribute(
+    "aria-label",
+    isFavorite(item.id) ? "Remove favorite" : "Add favorite",
+  );
+
+  favoriteBtn.setAttribute("aria-pressed", String(isFavorite(item.id)));
+
+  favoriteBtn.addEventListener("click", async () => {
+    favoriteBtn.disabled = true;
+
+    try {
+      await toggleFavorite(item.id);
+    } finally {
+      favoriteBtn.disabled = false;
+    }
+  });
+
+  imageBox.append(image, favoriteBtn);
+
+  const body = document.createElement("div");
+
+  body.className = "card-body";
+
+  const name = document.createElement("h3");
+
+  name.textContent = item.name;
+
+  const city = document.createElement("p");
+
+  city.textContent = `📍 ${item.city}`;
+
+  const address = document.createElement("p");
+
+  address.textContent = [item.address, item.postalCode]
+    .filter(Boolean)
+    .join(", ");
+
+  const provider = document.createElement("span");
+
+  provider.className = "provider-badge";
+  provider.textContent = item.provider;
+
+  const buttons = document.createElement("div");
+
+  buttons.className = "card-buttons";
+
+  const menuBtn = document.createElement("button");
+
+  menuBtn.className = "primary-button";
+  menuBtn.textContent = "View Menu";
+
+  menuBtn.addEventListener("click", () => selectRestaurant(item));
+
+  const mapBtn = document.createElement("button");
+
+  mapBtn.className = "map-button";
+  mapBtn.textContent = "📍 Map";
+
+  mapBtn.addEventListener("click", () => showRestaurantOnMap(item));
+
+  buttons.append(menuBtn, mapBtn);
+
+  body.append(name, city, address, provider, buttons);
+
+  card.append(imageBox, body);
+
+  return card;
+}
+
+// =====================================
+// SELECT RESTAURANT
+// =====================================
+
+function selectRestaurant(restaurant) {
+  selectedRestaurant = restaurant;
+
+  restaurantName.textContent = restaurant.name;
+
+  restaurantDetails.textContent = [
+    restaurant.address,
+    restaurant.city,
+    restaurant.provider,
+  ]
+    .filter(Boolean)
+    .join(" • ");
+
+  menuSection.hidden = false;
+
+  menuSection.scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+
+  loadMenu("daily");
+}
+
+// =====================================
+// DAILY AND WEEKLY MENUS
+// =====================================
+
+async function loadMenu(type) {
+  if (!selectedRestaurant) return;
+
+  const requestId = ++menuRequestId;
+
+  dailyBtn.classList.toggle("active", type === "daily");
+
+  weeklyBtn.classList.toggle("active", type === "weekly");
+
+  menuContent.textContent = "Loading menu...";
+
+  const url =
+    type === "daily"
+      ? API.daily(selectedRestaurant.id)
+      : API.weekly(selectedRestaurant.id);
+
+  try {
+    const data = await fetchData(url);
+
+    if (requestId !== menuRequestId) {
+      return;
+    }
+
+    renderMenu(data, type);
+  } catch (error) {
+    if (requestId !== menuRequestId) {
+      return;
+    }
+
+    menuContent.replaceChildren();
+
+    const message = document.createElement("p");
+
+    message.className = "error-message";
+
+    message.textContent = "Unable to load menu. " + error.message;
+
+    menuContent.appendChild(message);
+  }
+}
+
+// =====================================
+// NORMALIZE MENU RESPONSE
+// =====================================
+
+function normalizeDays(data, type) {
+  const root = data?.menu ?? data?.data ?? data;
+
+  if (Array.isArray(root?.days)) {
+    return root.days;
+  }
+
+  if (Array.isArray(root?.courses)) {
+    return [
+      {
+        date: root.date ?? "Today's Menu",
+        courses: root.courses,
+      },
+    ];
+  }
+
+  if (Array.isArray(root)) {
+    if (root.some((item) => Array.isArray(item?.courses))) {
+      return root;
+    }
+
+    return [
+      {
+        date: type === "daily" ? "Today's Menu" : "Weekly Menu",
+
+        courses: root,
+      },
+    ];
+  }
+
+  return [];
+}
+
+// =====================================
+// RENDER MENU
+// =====================================
+
+function renderMenu(data, type) {
+  menuContent.replaceChildren();
+
+  const days = normalizeDays(data, type);
+
+  if (!days.length) {
+    const empty = document.createElement("p");
+
+    empty.className = "empty-message";
+
+    empty.textContent = "No menu information available.";
+
+    menuContent.appendChild(empty);
+
+    return;
+  }
+
+  days.forEach((day) => {
+    const section = document.createElement("section");
+
+    section.className = "menu-day";
+
+    const heading = document.createElement("h3");
+
+    heading.textContent = day.date ?? "Lunch Menu";
+
+    section.appendChild(heading);
+
+    const courses = Array.isArray(day.courses) ? day.courses : [];
+
+    if (!courses.length) {
+      const empty = document.createElement("p");
+
+      empty.textContent = "No meals listed for this day.";
+
+      section.appendChild(empty);
+    }
+
+    courses.forEach((course) => {
+      const dish = document.createElement("div");
+
+      dish.className = "dish";
+
+      const title = document.createElement("strong");
+
+      title.textContent =
+        typeof course === "string" ? course : (course?.name ?? "Meal");
+
+      const details = document.createElement("small");
+
+      const price = course?.price ?? "";
+
+      const diets = course?.diets ?? "";
+
+      details.textContent = [
+        price,
+        Array.isArray(diets) ? diets.join(", ") : diets,
+      ]
+        .filter(Boolean)
+        .join(" • ");
+
+      dish.append(title, details);
+
+      section.appendChild(dish);
+    });
+
+    menuContent.appendChild(section);
+  });
+}
+
+// =====================================
+// RESTAURANT MAP
+// =====================================
+
+function populateMapSelect() {
+  mapRestaurantSelect.replaceChildren();
+
+  const first = document.createElement("option");
+
+  first.value = "";
+  first.textContent = "Select a restaurant";
+
+  mapRestaurantSelect.appendChild(first);
+
+  restaurants.forEach((item) => {
+    const option = document.createElement("option");
+
+    option.value = item.id;
+
+    option.textContent = `${item.name} - ${item.city}`;
+
+    mapRestaurantSelect.appendChild(option);
+  });
+}
+
+function showRestaurantOnMap(restaurant) {
+  mapRestaurantSelect.value = restaurant.id;
+
+  const coordinates = restaurant.coordinates;
+
+  let query;
+
+  // API coordinates are in this order:
+  // [longitude, latitude]
+
+  if (
+    Array.isArray(coordinates) &&
+    coordinates.length >= 2 &&
+    Number.isFinite(coordinates[0]) &&
+    Number.isFinite(coordinates[1]) &&
+    Math.abs(coordinates[0]) <= 180 &&
+    Math.abs(coordinates[1]) <= 90 &&
+    !(coordinates[0] === 0 && coordinates[1] === 0)
+  ) {
+    const [longitude, latitude] = coordinates;
+
+    query = `${latitude},${longitude}`;
+
+    mapStatus.textContent =
+      `${restaurant.name} — ` +
+      `${restaurant.address}, ` +
+      `${restaurant.city}`;
+  } else {
+    // Address fallback if coordinates
+    // are not available.
+
+    query = [restaurant.name, restaurant.address, restaurant.city, "Finland"]
+      .filter(Boolean)
+      .join(", ");
+
+    mapStatus.textContent = `Searching address for ${restaurant.name}.`;
+  }
+
+  mapFrame.src =
+    "https://maps.google.com/maps?q=" +
+    encodeURIComponent(query) +
+    "&z=16&output=embed";
+
+  $("#mapSection").scrollIntoView({
+    behavior: "smooth",
+    block: "start",
+  });
+}
+
+// =====================================
+// REGISTRATION
+// =====================================
+
+registerForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const submitButton = registerForm.querySelector('button[type="submit"]');
+
+  submitButton.disabled = true;
+
+  registerStatus.textContent = "Creating account...";
+
+  const username = $("#registerUsername").value.trim();
+
+  const email = $("#registerEmail").value.trim();
+
+  const password = $("#registerPassword").value;
+
+  try {
+    // Check username availability.
+
+    const availability = await fetchData(API.available(username));
+
+    if (!availability.available) {
+      throw new Error("Username is already taken.");
+    }
+
+    const result = await fetchData(API.users, {
+      method: "POST",
+
+      body: JSON.stringify({
+        username,
+        email,
+        password,
+      }),
+    });
+
+    if (!result.data) {
+      throw new Error(result.message || "Registration failed.");
+    }
+
+    registerStatus.replaceChildren();
+
+    const message = document.createElement("p");
+
+    message.textContent = result.message || "Account created successfully.";
+
+    registerStatus.appendChild(message);
+
+    if (result.activationUrl) {
+      const activationMessage = document.createElement("p");
+
+      activationMessage.textContent =
+        "Account activation is required. " +
+        "Follow the activation instructions.";
+
+      registerStatus.appendChild(activationMessage);
+
+      const activationUrl = new URL(result.activationUrl, API_BASE);
+
+      if (activationUrl.protocol === "https:") {
+        const link = document.createElement("a");
+
+        link.href = activationUrl.href;
+        link.textContent = "Activate account";
+        link.target = "_blank";
+        link.rel = "noopener noreferrer";
+
+        registerStatus.appendChild(link);
+      }
+    }
+
+    registerForm.reset();
+  } catch (error) {
+    registerStatus.textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
+  }
+});
+
+// =====================================
+// LOGIN
+// =====================================
+
+loginForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  const submitButton = loginForm.querySelector('button[type="submit"]');
+
+  submitButton.disabled = true;
+
+  loginStatus.textContent = "Logging in...";
+
+  const username = $("#loginUsername").value.trim();
+
+  const password = $("#loginPassword").value;
+
+  try {
+    const result = await fetchData(API.login, {
+      method: "POST",
+
+      body: JSON.stringify({
+        username,
+        password,
+      }),
+    });
+
+    // API may return an error message
+    // even with HTTP status 200.
+
+    if (!result.token || !result.data) {
+      throw new Error(result.message || "Invalid login credentials.");
+    }
+
+    token = result.token;
+    currentUser = result.data;
+
+    loginForm.reset();
+
+    loginStatus.textContent = "";
+
+    loginDialog.close();
+
+    updateAuthUI();
+
+    displayRestaurants();
+  } catch (error) {
+    loginStatus.textContent = error.message;
+  } finally {
+    submitButton.disabled = false;
+  }
+});
+
+// =====================================
+// LOGIN UI AND LOGOUT
+// =====================================
+
+function updateAuthUI() {
+  const loggedIn = Boolean(currentUser && token);
+
+  loginNav.hidden = loggedIn;
+  registerNav.hidden = loggedIn;
+  logoutBtn.hidden = !loggedIn;
+
+  welcomeMessage.textContent = loggedIn
+    ? `Welcome, ${currentUser.username}!`
+    : "";
+
+  favoritesBtn.textContent = loggedIn ? "♥ Account Favorite" : "♥ My Favorites";
+}
+
+logoutBtn.addEventListener("click", () => {
+  token = null;
+  currentUser = null;
+
+  statusMessage.textContent = "You have been logged out.";
+
+  updateAuthUI();
+
+  displayRestaurants();
+});
+
+// =====================================
+// DIALOG EVENTS
+// =====================================
+
+loginNav.addEventListener("click", () => {
+  loginStatus.textContent = "";
+
+  loginDialog.showModal();
+});
+
+registerNav.addEventListener("click", () => {
+  registerStatus.textContent = "";
+
+  registerDialog.showModal();
+});
+
+document.querySelectorAll("[data-close]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const dialog = document.getElementById(button.dataset.close);
+
+    dialog.close();
+  });
+});
+
+// =====================================
+// SEARCH AND FILTER EVENTS
+// =====================================
+
+searchInput.addEventListener("input", displayRestaurants);
+
+cityFilter.addEventListener("change", displayRestaurants);
+
+providerFilter.addEventListener("change", displayRestaurants);
+
+allBtn.addEventListener("click", () => {
+  resetFilters();
+
+  setFavoriteFilter(false);
+});
+
+favoritesBtn.addEventListener("click", () => {
+  resetFilters();
+
+  setFavoriteFilter(true);
+});
+
+$("#navFavorites").addEventListener("click", () => {
+  resetFilters();
+
+  setFavoriteFilter(true);
+});
+
+$("#navRestaurants").addEventListener("click", () => {
+  resetFilters();
+
+  setFavoriteFilter(false);
+});
+
+// =====================================
+// MENU EVENTS
+// =====================================
+
+dailyBtn.addEventListener("click", () => loadMenu("daily"));
+
+weeklyBtn.addEventListener("click", () => loadMenu("weekly"));
+
+$("#closeMenu").addEventListener("click", () => {
+  ++menuRequestId;
+
+  selectedRestaurant = null;
+
+  menuSection.hidden = true;
+});
+
+// =====================================
+// MAP EVENTS
+// =====================================
+
+$("#findOnMapBtn").addEventListener("click", () => {
+  const id = mapRestaurantSelect.value;
+
+  const restaurant = restaurants.find((item) => item.id === id);
+
+  if (!restaurant) {
+    mapStatus.textContent = "Please select a restaurant.";
+
+    return;
+  }
+
+  showRestaurantOnMap(restaurant);
+});
+
+// =====================================
+// START APPLICATION
+// =====================================
+
+updateAuthUI();
+loadRestaurants();
+
+$("#footerFavorites").addEventListener("click", () => {
+  resetFilters();
+  setFavoriteFilter(true);
+});

@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="Explore student restaurants in Finland."
+    />
+
+    <title>Student Food Finder Finland</title>
+
+    <link rel="stylesheet" href="style.css" />
+    <script src="script.js" defer></script>
+  </head>
+
+  <body>
+    <!-- NAVIGATION -->
+
+    <header id="home" class="header">
+      <nav class="navbar">
+        <a href="#home" class="logo"> 🍽️ FoodFinder </a>
+
+        <div class="nav-links">
+          <a href="#home">Home</a>
+          <a href="#restaurants" id="navRestaurants"> Restaurants </a>
+          <a href="#restaurants" id="navFavorites"> Favorites </a>
+          <a href="#mapSection">Map</a>
+
+          <button id="loginNav" class="nav-button">Login</button>
+
+          <button id="registerNav" class="nav-button">Register</button>
+
+          <button id="logoutBtn" class="nav-button" hidden>Logout</button>
+        </div>
+      </nav>
+
+      <!-- HERO SECTION -->
+
+      <section class="hero">
+        <div class="hero-content">
+          <span class="eyebrow"> STUDENT LUNCH GUIDE • FINLAND </span>
+
+          <h1>
+            Find your next
+            <span>delicious lunch.</span>
+          </h1>
+
+          <p>
+            Discover student restaurants across Finland, explore daily and
+            weekly lunch menus and save your favorite restaurants.
+          </p>
+
+          <div class="hero-actions">
+            <a href="#restaurants" class="hero-button">
+              Explore Restaurants ↓
+            </a>
+
+            <a href="#mapSection" class="hero-outline"> Explore Map </a>
+          </div>
+
+          <p id="welcomeMessage" aria-live="polite"></p>
+        </div>
+
+        <div class="hero-image">
+          <img
+            src="https://images.unsplash.com/photo-1512621776951-a57141f2eefd?w=1000&auto=format&fit=crop&q=85"
+            alt="Colorful healthy lunch bowl"
+          />
+        </div>
+      </section>
+    </header>
+
+    <main>
+      <!-- RESTAURANTS -->
+
+      <section id="restaurants">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow green">DISCOVER</span>
+            <h2>Student Restaurants</h2>
+            <p>Find your next affordable lunch spot.</p>
+          </div>
+
+          <span id="restaurantCount"> Loading... </span>
+        </div>
+
+        <div class="filters">
+          <input
+            type="search"
+            id="search"
+            placeholder="Search restaurants..."
+            aria-label="Search restaurants"
+          />
+
+          <select id="cityFilter" aria-label="City">
+            <option value="">All Cities</option>
+          </select>
+
+          <select id="providerFilter" aria-label="Provider">
+            <option value="">All Providers</option>
+          </select>
+        </div>
+
+        <div class="filter-tabs">
+          <button id="allBtn" class="tab active">All Restaurants</button>
+
+          <button id="favoritesBtn" class="tab">♥ My Favorites</button>
+        </div>
+
+        <p id="status" role="status" aria-live="polite">
+          Loading restaurants...
+        </p>
+
+        <div id="restaurantList" class="restaurant-grid"></div>
+      </section>
+
+      <!-- MENU SECTION -->
+
+      <section id="menuSection" class="menu-section" hidden>
+        <div class="menu-heading">
+          <div>
+            <span class="eyebrow green">LUNCH MENU</span>
+            <h2 id="restaurantName"></h2>
+            <p id="restaurantDetails"></p>
+          </div>
+
+          <button id="closeMenu" class="close-button" aria-label="Close menu">
+            ✕
+          </button>
+        </div>
+
+        <div class="menu-tabs">
+          <button id="dailyBtn" class="tab active">☀️ Daily Menu</button>
+
+          <button id="weeklyBtn" class="tab">📅 Weekly Menu</button>
+        </div>
+
+        <div id="menuContent" aria-live="polite"></div>
+      </section>
+
+      <!-- MAP SECTION -->
+
+      <section id="mapSection" class="map-section">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow green">LOCATIONS</span>
+            <h2>Find Restaurants on Map</h2>
+            <p>Explore restaurant locations across Finland.</p>
+          </div>
+        </div>
+
+        <div class="map-layout">
+          <div class="map-info">
+            <h3>📍 Restaurant Locations</h3>
+
+            <p>
+              Select a restaurant to display its location using coordinates from
+              the restaurant API.
+            </p>
+
+            <label for="mapRestaurantSelect"> Choose Restaurant </label>
+
+            <select id="mapRestaurantSelect">
+              <option value="">Select a restaurant</option>
+            </select>
+
+            <button id="findOnMapBtn" class="primary-button">
+              Show Location
+            </button>
+
+            <p id="mapStatus" role="status">
+              Select a restaurant to get started.
+            </p>
+          </div>
+
+          <iframe
+            id="restaurantMap"
+            title="Restaurant location map"
+            src="https://maps.google.com/maps?q=Finland&z=5&output=embed"
+            loading="lazy"
+            allowfullscreen
+          >
+          </iframe>
+        </div>
+      </section>
+
+      <!-- ABOUT SECTION -->
+
+      <section class="about-section">
+        <div>
+          <h2>About Us</h2>
+
+          <p>
+            FoodFinder helps students find nearby student restaurants, check
+            lunch menus and choose their favorite places to eat in Finland.
+          </p>
+        </div>
+
+        <img
+          src="https://images.unsplash.com/photo-1547592180-85f173990554?w=900&auto=format&fit=crop&q=85"
+          alt="Fresh lunch food"
+          loading="lazy"
+        />
+      </section>
+    </main>
+
+    <!-- LOGIN DIALOG -->
+
+    <dialog id="loginDialog" class="auth-dialog">
+      <button
+        class="dialog-close"
+        data-close="loginDialog"
+        aria-label="Close login"
+      >
+        ✕
+      </button>
+
+      <h2>Welcome Back</h2>
+      <p>Login to your FoodFinder account.</p>
+
+      <form id="loginForm">
+        <label for="loginUsername">Username</label>
+
+        <input
+          id="loginUsername"
+          name="username"
+          type="text"
+          autocomplete="username"
+          required
+        />
+
+        <label for="loginPassword">Password</label>
+
+        <input
+          id="loginPassword"
+          name="password"
+          type="password"
+          autocomplete="current-password"
+          required
+        />
+
+        <button type="submit" class="primary-button">Login</button>
+
+        <p id="loginStatus" role="status"></p>
+      </form>
+    </dialog>
+
+    <!-- REGISTRATION DIALOG -->
+
+    <dialog id="registerDialog" class="auth-dialog">
+      <button
+        class="dialog-close"
+        data-close="registerDialog"
+        aria-label="Close registration"
+      >
+        ✕
+      </button>
+
+      <h2>Create Account</h2>
+
+      <p>Register to join FoodFinder.</p>
+
+      <form id="registerForm">
+        <label for="registerUsername">Username</label>
+
+        <input
+          id="registerUsername"
+          name="username"
+          type="text"
+          autocomplete="username"
+          required
+        />
+
+        <label for="registerEmail">Email</label>
+
+        <input
+          id="registerEmail"
+          name="email"
+          type="email"
+          autocomplete="email"
+          required
+        />
+
+        <label for="registerPassword">Password</label>
+
+        <input
+          id="registerPassword"
+          name="password"
+          type="password"
+          minlength="8"
+          autocomplete="new-password"
+          required
+        />
+
+        <button type="submit" class="primary-button">Register</button>
+
+        <p id="registerStatus" role="status"></p>
+      </form>
+    </dialog>
+
+    <!-- FOOTER -->
+
+    <footer>
+      <div class="footer-inner">
+        <div>
+          <h3>🍽️ FoodFinder</h3>
+          <p>Find your favorite student lunch.</p>
+        </div>
+
+        <div class="footer-links">
+          <h4>Quick Links</h4>
+          <a href="#home">Home</a>
+          <a href="#restaurants">Restaurants</a>
+          <a href="#restaurants" id="footerFavorites"> Favorites </a>
+          <a href="#mapSection">Map</a>
+        </div>
+
+        <div>
+          <h4>Resources</h4>
+          <p>Restaurant data: Metropolia</p>
+          <p>Map: Google Maps</p>
+          <p>Food images: Unsplash</p>
+        </div>
+      </div>
+
+      <div class="footer-bottom">2026 FoodFinder Finland</div>
+    </footer>
+  </body>
+</html>
