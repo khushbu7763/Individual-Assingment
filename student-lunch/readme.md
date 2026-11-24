@@ -1,4 +1,3 @@
-
 # Student Food Finder Finland
 
 ## About the Project
@@ -47,6 +46,6 @@ During this project, I learned how to fetch data from
 an API, display it on a website, use JavaScript for
 search and filters, and create a responsive website.
 
-## Live Website
+## Live Websit
 
-Link will be added after deployment.
+[Live Website](https://lambent-blancmange-e54518.netlify.app/)
